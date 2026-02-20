@@ -46,16 +46,35 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(SDL2_DIR "C:/SDL2")
-include_directories(${SDL2_DIR}/include)
-link_directories(${SDL2_DIR}/lib/x64)
+set(SDL2_IMAGE_DIR "C:/SDL2_image")
 
-add_executable(GameEngine
+include_directories(${SDL2_DIR}/include)
+include_directories(${SDL2_IMAGE_DIR}/include)
+
+link_directories(${SDL2_DIR}/lib/x64)
+link_directories(${SDL2_IMAGE_DIR}/lib/x64)
+
+add_executable(GameEngine 
     src/main.cpp
 )
 
-target_link_libraries(GameEngine SDL2main SDL2)
+target_link_libraries(GameEngine 
+    SDL2main 
+    SDL2
+    SDL2_image
+)
 
 add_custom_command(TARGET GameEngine POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${SDL2_DIR}/lib/x64/SDL2.dll"
     $<TARGET_FILE_DIR:GameEngine>)
+
+add_custom_command(TARGET GameEngine POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${SDL2_IMAGE_DIR}/lib/x64/SDL2_image.dll"
+    $<TARGET_FILE_DIR:GameEngine>)
+
+add_custom_command(TARGET GameEngine POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    "${CMAKE_SOURCE_DIR}/assets"
+    $<TARGET_FILE_DIR:GameEngine>/assets)

@@ -59,10 +59,12 @@
 
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
+#include <SDL_image.h>
 #include <iostream>
 
 const int SCREEN_WIDTH = 800;
 const int SCREEN_HEIGHT = 600;
+
 #undef main
 int main(int argc, char* argv[]) {
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
@@ -70,8 +72,15 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
+    int imgFlags = IMG_INIT_PNG;
+    if (!(IMG_Init(imgFlags) & imgFlags)) {
+        std::cout << "SDL_image could not initialize! SDL_image Error: " << IMG_GetError() << std::endl;
+        SDL_Quit();
+        return -1;
+    }
+
     SDL_Window* window = SDL_CreateWindow(
-        "Game Engine - Phase 1",
+        "Game Engine - Phase 2",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
         SCREEN_WIDTH,
@@ -81,19 +90,39 @@ int main(int argc, char* argv[]) {
 
     if (window == nullptr) {
         std::cout << "Window could not be created! SDL_Error: " << SDL_GetError() << std::endl;
+        IMG_Quit();
         SDL_Quit();
         return -1;
     }
 
-    SDL_Renderer* renderer = SDL_CreateRenderer(
-        window,
-        -1,
-        SDL_RENDERER_ACCELERATED
-    );
+    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
 
     if (renderer == nullptr) {
         std::cout << "Renderer could not be created! SDL_Error: " << SDL_GetError() << std::endl;
         SDL_DestroyWindow(window);
+        IMG_Quit();
+        SDL_Quit();
+        return -1;
+    }
+
+    SDL_Surface* loadedSurface = IMG_Load("assets/test_sprite.png");
+    if (loadedSurface == nullptr) {
+        std::cout << "Unable to load image! SDL_image Error: " << IMG_GetError() << std::endl;
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        IMG_Quit();
+        SDL_Quit();
+        return -1;
+    }
+
+    SDL_Texture* spriteTexture = SDL_CreateTextureFromSurface(renderer, loadedSurface);
+    SDL_FreeSurface(loadedSurface);
+
+    if (spriteTexture == nullptr) {
+        std::cout << "Unable to create texture! SDL Error: " << SDL_GetError() << std::endl;
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        IMG_Quit();
         SDL_Quit();
         return -1;
     }
@@ -106,12 +135,17 @@ int main(int argc, char* argv[]) {
     Uint32 frameStart;
     int frameTime;
 
-    int squareX = 350;
-    int squareY = 250;
+    float spriteX = 368.0f;
+    float spriteY = 268.0f;
+    float spriteSpeed = 200.0f;
 
+    Uint32 lastTime = SDL_GetTicks();
 
     while (isRunning) {
         frameStart = SDL_GetTicks();
+        Uint32 currentTime = SDL_GetTicks();
+        float deltaTime = (currentTime - lastTime) / 1000.0f;
+        lastTime = currentTime;
 
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) {
@@ -122,19 +156,20 @@ int main(int argc, char* argv[]) {
                 if (event.key.keysym.sym == SDLK_ESCAPE) {
                     isRunning = false;
                 }
-                if (event.key.keysym.sym == SDLK_RIGHT) squareX += 5;
-                if (event.key.keysym.sym == SDLK_LEFT) squareX -= 5;
-                if (event.key.keysym.sym == SDLK_DOWN) squareY += 5;
-                if (event.key.keysym.sym == SDLK_UP) squareY -= 5;
             }
         }
+
+        const Uint8* keystate = SDL_GetKeyboardState(NULL);
+        if (keystate[SDL_SCANCODE_RIGHT]) spriteX += spriteSpeed * deltaTime;
+        if (keystate[SDL_SCANCODE_LEFT]) spriteX -= spriteSpeed * deltaTime;
+        if (keystate[SDL_SCANCODE_DOWN]) spriteY += spriteSpeed * deltaTime;
+        if (keystate[SDL_SCANCODE_UP]) spriteY -= spriteSpeed * deltaTime;
 
         SDL_SetRenderDrawColor(renderer, 30, 30, 46, 255);
         SDL_RenderClear(renderer);
 
-        SDL_Rect testRect = {squareX, squareY, 100, 100};
-        SDL_SetRenderDrawColor(renderer, 255, 100, 100, 255);
-        SDL_RenderFillRect(renderer, &testRect);
+        SDL_Rect destRect = {(int)spriteX, (int)spriteY, 64, 64};
+        SDL_RenderCopy(renderer, spriteTexture, NULL, &destRect);
 
         SDL_RenderPresent(renderer);
 
@@ -144,8 +179,10 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    SDL_DestroyTexture(spriteTexture);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
+    IMG_Quit();
     SDL_Quit();
 
     return 0;
