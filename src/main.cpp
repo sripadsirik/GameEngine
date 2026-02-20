@@ -106,6 +106,10 @@ int main(int argc, char* argv[]) {
     Uint32 frameStart;
     int frameTime;
 
+    int squareX = 350;
+    int squareY = 250;
+
+
     while (isRunning) {
         frameStart = SDL_GetTicks();
 
@@ -118,13 +122,17 @@ int main(int argc, char* argv[]) {
                 if (event.key.keysym.sym == SDLK_ESCAPE) {
                     isRunning = false;
                 }
+                if (event.key.keysym.sym == SDLK_RIGHT) squareX += 5;
+                if (event.key.keysym.sym == SDLK_LEFT) squareX -= 5;
+                if (event.key.keysym.sym == SDLK_DOWN) squareY += 5;
+                if (event.key.keysym.sym == SDLK_UP) squareY -= 5;
             }
         }
 
         SDL_SetRenderDrawColor(renderer, 30, 30, 46, 255);
         SDL_RenderClear(renderer);
 
-        SDL_Rect testRect = {350, 250, 100, 100};
+        SDL_Rect testRect = {squareX, squareY, 100, 100};
         SDL_SetRenderDrawColor(renderer, 255, 100, 100, 255);
         SDL_RenderFillRect(renderer, &testRect);
 
