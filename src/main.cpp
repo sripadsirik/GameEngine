@@ -64,6 +64,25 @@
 
 const int SCREEN_WIDTH = 800;
 const int SCREEN_HEIGHT = 600;
+const int WORLD_WIDTH = 2000;
+const int WORLD_HEIGHT = 1500;
+
+struct Camera {
+    float x;
+    float y;
+    int width;
+    int height;
+};
+
+void updateCamera(Camera& camera, float targetX, float targetY) {
+    camera.x = targetX - camera.width / 2;
+    camera.y = targetY - camera.height / 2;
+
+    if (camera.x < 0) camera.x = 0;
+    if (camera.y < 0) camera.y = 0;
+    if (camera.x > WORLD_WIDTH - camera.width) camera.x = WORLD_WIDTH - camera.width;
+    if (camera.y > WORLD_HEIGHT - camera.height) camera.y = WORLD_HEIGHT - camera.height;
+}
 
 #undef main
 int main(int argc, char* argv[]) {
@@ -80,7 +99,7 @@ int main(int argc, char* argv[]) {
     }
 
     SDL_Window* window = SDL_CreateWindow(
-        "Game Engine - Phase 2",
+        "Game Engine - Phase 2: Camera",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
         SCREEN_WIDTH,
@@ -135,9 +154,11 @@ int main(int argc, char* argv[]) {
     Uint32 frameStart;
     int frameTime;
 
-    float spriteX = 368.0f;
-    float spriteY = 268.0f;
+    float spriteX = WORLD_WIDTH / 2.0f;
+    float spriteY = WORLD_HEIGHT / 2.0f;
     float spriteSpeed = 200.0f;
+
+    Camera camera = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
 
     Uint32 lastTime = SDL_GetTicks();
 
@@ -160,15 +181,35 @@ int main(int argc, char* argv[]) {
         }
 
         const Uint8* keystate = SDL_GetKeyboardState(NULL);
+        
         if (keystate[SDL_SCANCODE_RIGHT]) spriteX += spriteSpeed * deltaTime;
         if (keystate[SDL_SCANCODE_LEFT]) spriteX -= spriteSpeed * deltaTime;
         if (keystate[SDL_SCANCODE_DOWN]) spriteY += spriteSpeed * deltaTime;
         if (keystate[SDL_SCANCODE_UP]) spriteY -= spriteSpeed * deltaTime;
 
+        if (spriteX < 0) spriteX = 0;
+        if (spriteY < 0) spriteY = 0;
+        if (spriteX > WORLD_WIDTH - 64) spriteX = WORLD_WIDTH - 64;
+        if (spriteY > WORLD_HEIGHT - 64) spriteY = WORLD_HEIGHT - 64;
+
+        updateCamera(camera, spriteX + 32, spriteY + 32);
+
         SDL_SetRenderDrawColor(renderer, 30, 30, 46, 255);
         SDL_RenderClear(renderer);
 
-        SDL_Rect destRect = {(int)spriteX, (int)spriteY, 64, 64};
+        SDL_SetRenderDrawColor(renderer, 80, 80, 100, 255);
+        for (int x = 0; x < WORLD_WIDTH; x += 100) {
+            SDL_Rect line = {x - (int)camera.x, 0, 2, SCREEN_HEIGHT};
+            SDL_RenderFillRect(renderer, &line);
+        }
+        for (int y = 0; y < WORLD_HEIGHT; y += 100) {
+            SDL_Rect line = {0, y - (int)camera.y, SCREEN_WIDTH, 2};
+            SDL_RenderFillRect(renderer, &line);
+        }
+
+        int screenX = (int)(spriteX - camera.x);
+        int screenY = (int)(spriteY - camera.y);
+        SDL_Rect destRect = {screenX, screenY, 64, 64};
         SDL_RenderCopy(renderer, spriteTexture, NULL, &destRect);
 
         SDL_RenderPresent(renderer);
