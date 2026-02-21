@@ -8,6 +8,7 @@
 #include "Components.h"
 #include "PhysicsSystem.h"
 #include "AnimationSystem.h"
+#include <SDL_ttf.h>
 
 const int SCREEN_WIDTH = 800;
 const int SCREEN_HEIGHT = 600;
@@ -124,6 +125,46 @@ void renderParticles(ECS& ecs, SDL_Renderer* renderer, Camera& camera) {
     }
 }
 
+void renderText(SDL_Renderer* renderer, TTF_Font* font, const char* text, int x, int y, SDL_Color color) {
+    SDL_Surface* surface = TTF_RenderText_Solid(font, text, color);
+    if (surface == nullptr) return;
+    
+    SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
+    if (texture == nullptr) {
+        SDL_FreeSurface(surface);
+        return;
+    }
+    
+    SDL_Rect destRect = {x, y, surface->w, surface->h};
+    SDL_RenderCopy(renderer, texture, NULL, &destRect);
+    
+    SDL_DestroyTexture(texture);
+    SDL_FreeSurface(surface);
+}
+
+void renderHealthBar(SDL_Renderer* renderer, int x, int y, int width, int height, int current, int max) {
+    SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);
+    SDL_Rect bgRect = {x, y, width, height};
+    SDL_RenderFillRect(renderer, &bgRect);
+    
+    float healthPercent = (float)current / (float)max;
+    int healthWidth = (int)(width * healthPercent);
+    
+    if (healthPercent > 0.6f) {
+        SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
+    } else if (healthPercent > 0.3f) {
+        SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
+    } else {
+        SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+    }
+    
+    SDL_Rect healthRect = {x, y, healthWidth, height};
+    SDL_RenderFillRect(renderer, &healthRect);
+    
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+    SDL_RenderDrawRect(renderer, &bgRect);
+}
+
 void debugRenderColliders(ECS& ecs, SDL_Renderer* renderer, Camera& camera) {
     auto entities = ecs.getEntitiesWithComponent<Collider>();
     
@@ -164,8 +205,16 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
+    if (TTF_Init() == -1) {
+        std::cout << "SDL_ttf could not initialize! SDL_ttf Error: " << TTF_GetError() << std::endl;
+        Mix_Quit();
+        IMG_Quit();
+        SDL_Quit();
+        return -1;
+    }
+
     SDL_Window* window = SDL_CreateWindow(
-        "Game Engine - Phase 5: Game Features",
+        "Game Engine - Phase 5: Complete",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
         SCREEN_WIDTH,
@@ -175,6 +224,7 @@ int main(int argc, char* argv[]) {
 
     if (window == nullptr) {
         std::cout << "Window could not be created! SDL_Error: " << SDL_GetError() << std::endl;
+        TTF_Quit();
         Mix_Quit();
         IMG_Quit();
         SDL_Quit();
@@ -186,17 +236,42 @@ int main(int argc, char* argv[]) {
     if (renderer == nullptr) {
         std::cout << "Renderer could not be created! SDL_Error: " << SDL_GetError() << std::endl;
         SDL_DestroyWindow(window);
+        TTF_Quit();
         Mix_Quit();
         IMG_Quit();
         SDL_Quit();
         return -1;
     }
 
+    TTF_Font* font = TTF_OpenFont("assets/PressStart2P-Regular.ttf", 14);
+    if (font == nullptr) {
+        std::cout << "Failed to load font! SDL_ttf Error: " << TTF_GetError() << std::endl;
+    }
+
+    const int DAMAGE_CHANNEL = 0;
+    const int HEAL_CHANNEL   = 1;
+
+    Mix_Chunk* damageSound = Mix_LoadWAV("assets/sounds/845959__josefpres__piano-loops-205-octave-long-loop-120-bpm.wav");
+    if (damageSound == nullptr) {
+        std::cout << "Failed to load damage sound! SDL_mixer Error: " << Mix_GetError() << std::endl;
+    } else {
+        Mix_VolumeChunk(damageSound, 64);   // softer, ~50% volume for damage
+    }
+
+    Mix_Chunk* healSound = Mix_LoadWAV("assets/sounds/845959__josefpres__piano-loops-205-octave-long-loop-120-bpm.wav");
+    if (healSound == nullptr) {
+        std::cout << "Failed to load heal sound! SDL_mixer Error: " << Mix_GetError() << std::endl;
+    } else {
+        Mix_VolumeChunk(healSound, 128);    // full volume for heal
+    }
+
     SDL_Surface* loadedSurface = IMG_Load("assets/test_sprite.png");
     if (loadedSurface == nullptr) {
         std::cout << "Unable to load image! SDL_image Error: " << IMG_GetError() << std::endl;
+        TTF_CloseFont(font);
         SDL_DestroyRenderer(renderer);
         SDL_DestroyWindow(window);
+        TTF_Quit();
         Mix_Quit();
         IMG_Quit();
         SDL_Quit();
@@ -208,8 +283,10 @@ int main(int argc, char* argv[]) {
 
     if (spriteTexture == nullptr) {
         std::cout << "Unable to create texture! SDL Error: " << SDL_GetError() << std::endl;
+        TTF_CloseFont(font);
         SDL_DestroyRenderer(renderer);
         SDL_DestroyWindow(window);
+        TTF_Quit();
         Mix_Quit();
         IMG_Quit();
         SDL_Quit();
@@ -281,6 +358,10 @@ int main(int argc, char* argv[]) {
     Uint32 lastTime = SDL_GetTicks();
 
     bool showColliders = false;
+    
+    int frameCount = 0;
+    float fpsTimer = 0.0f;
+    int currentFPS = 0;
 
     while (isRunning) {
         frameStart = SDL_GetTicks();
@@ -288,6 +369,14 @@ int main(int argc, char* argv[]) {
         float deltaTime = (currentTime - lastTime) / 1000.0f;
         if (deltaTime > 0.05f) deltaTime = 0.05f;
         lastTime = currentTime;
+
+        frameCount++;
+        fpsTimer += deltaTime;
+        if (fpsTimer >= 1.0f) {
+            currentFPS = frameCount;
+            frameCount = 0;
+            fpsTimer = 0.0f;
+        }
 
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) {
@@ -300,6 +389,24 @@ int main(int argc, char* argv[]) {
                 }
                 if (event.key.keysym.sym == SDLK_c) {
                     showColliders = !showColliders;
+                }
+                if (event.key.keysym.sym == SDLK_h && event.key.repeat == 0) {
+                    auto& playerHealth = ecs.getComponent<Health>(player);
+                    playerHealth.current -= 10;
+                    if (playerHealth.current < 0) playerHealth.current = 0;
+                    if (damageSound != nullptr) {
+                        Mix_HaltChannel(DAMAGE_CHANNEL);
+                        Mix_PlayChannel(DAMAGE_CHANNEL, damageSound, 0);
+                    }
+                }
+                if (event.key.keysym.sym == SDLK_j && event.key.repeat == 0) {
+                    auto& playerHealth = ecs.getComponent<Health>(player);
+                    playerHealth.current += 10;
+                    if (playerHealth.current > playerHealth.max) playerHealth.current = playerHealth.max;
+                    if (healSound != nullptr) {
+                        Mix_HaltChannel(HEAL_CHANNEL);
+                        Mix_PlayChannel(HEAL_CHANNEL, healSound, 0);
+                    }
                 }
             }
         }
@@ -357,6 +464,27 @@ int main(int argc, char* argv[]) {
             debugRenderColliders(ecs, renderer, camera);
         }
 
+        if (font != nullptr) {
+            auto& playerHealth = ecs.getComponent<Health>(player);
+            
+            renderHealthBar(renderer, 10, 10, 200, 20, playerHealth.current, playerHealth.max);
+            
+            char healthText[32];
+            sprintf(healthText, "HP: %d/%d", playerHealth.current, playerHealth.max);
+            SDL_Color white = {255, 255, 255, 255};
+            renderText(renderer, font, healthText, 10, 35, white);
+            
+            char fpsText[32];
+            sprintf(fpsText, "FPS: %d", currentFPS);
+            renderText(renderer, font, fpsText, 10, 65, white);
+            
+            char posText[64];
+            sprintf(posText, "Pos: (%.0f, %.0f)", playerTransform.x, playerTransform.y);
+            renderText(renderer, font, posText, 10, 95, white);
+            
+            renderText(renderer, font, "H - Damage  J - Heal", 10, SCREEN_HEIGHT - 30, white);
+        }
+
         SDL_RenderPresent(renderer);
 
         frameTime = SDL_GetTicks() - frameStart;
@@ -366,8 +494,12 @@ int main(int argc, char* argv[]) {
     }
 
     SDL_DestroyTexture(spriteTexture);
+    TTF_CloseFont(font);
+    Mix_FreeChunk(damageSound);
+    Mix_FreeChunk(healSound);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
+    TTF_Quit();
     Mix_Quit();
     IMG_Quit();
     SDL_Quit();
