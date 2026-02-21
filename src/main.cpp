@@ -1,11 +1,13 @@
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
 #include <SDL_image.h>
+#include <SDL_mixer.h>
 #include <iostream>
 #include <cmath>
 #include "ECS.h"
 #include "Components.h"
 #include "PhysicsSystem.h"
+#include "AnimationSystem.h"
 
 const int SCREEN_WIDTH = 800;
 const int SCREEN_HEIGHT = 600;
@@ -72,15 +74,52 @@ void renderSystem(ECS& ecs, SDL_Renderer* renderer, Camera& camera) {
             
             SDL_Rect destRect = {screenX, screenY, scaledWidth, scaledHeight};
             
-            SDL_RenderCopyEx(
-                renderer,
-                (SDL_Texture*)sprite.texture,
-                NULL,
-                &destRect,
-                transform.rotation,
-                NULL,
-                SDL_FLIP_NONE
-            );
+            SDL_Rect srcRect = {sprite.srcX, sprite.srcY, sprite.srcWidth, sprite.srcHeight};
+            
+            if (sprite.srcWidth == 0 || sprite.srcHeight == 0) {
+                SDL_RenderCopyEx(
+                    renderer,
+                    (SDL_Texture*)sprite.texture,
+                    NULL,
+                    &destRect,
+                    transform.rotation,
+                    NULL,
+                    SDL_FLIP_NONE
+                );
+            } else {
+                SDL_RenderCopyEx(
+                    renderer,
+                    (SDL_Texture*)sprite.texture,
+                    &srcRect,
+                    &destRect,
+                    transform.rotation,
+                    NULL,
+                    SDL_FLIP_NONE
+                );
+            }
+        }
+    }
+}
+
+void renderParticles(ECS& ecs, SDL_Renderer* renderer, Camera& camera) {
+    auto particles = ecs.getEntitiesWithComponent<Particle>();
+    
+    for (Entity entity : particles) {
+        if (ecs.hasComponent<Transform>(entity)) {
+            auto& transform = ecs.getComponent<Transform>(entity);
+            auto& particle = ecs.getComponent<Particle>(entity);
+            
+            int screenX = (int)(transform.x - camera.x);
+            int screenY = (int)(transform.y - camera.y);
+            
+            SDL_SetRenderDrawColor(renderer, 
+                particle.colorR, 
+                particle.colorG, 
+                particle.colorB, 
+                particle.colorA);
+            
+            SDL_Rect rect = {screenX, screenY, 8, 8};
+            SDL_RenderFillRect(renderer, &rect);
         }
     }
 }
@@ -106,7 +145,7 @@ void debugRenderColliders(ECS& ecs, SDL_Renderer* renderer, Camera& camera) {
 
 #undef main
 int main(int argc, char* argv[]) {
-    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
         std::cout << "SDL could not initialize! SDL_Error: " << SDL_GetError() << std::endl;
         return -1;
     }
@@ -118,8 +157,15 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
+    if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
+        std::cout << "SDL_mixer could not initialize! SDL_mixer Error: " << Mix_GetError() << std::endl;
+        IMG_Quit();
+        SDL_Quit();
+        return -1;
+    }
+
     SDL_Window* window = SDL_CreateWindow(
-        "Game Engine - Phase 4: Physics",
+        "Game Engine - Phase 5: Game Features",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
         SCREEN_WIDTH,
@@ -129,6 +175,7 @@ int main(int argc, char* argv[]) {
 
     if (window == nullptr) {
         std::cout << "Window could not be created! SDL_Error: " << SDL_GetError() << std::endl;
+        Mix_Quit();
         IMG_Quit();
         SDL_Quit();
         return -1;
@@ -139,6 +186,7 @@ int main(int argc, char* argv[]) {
     if (renderer == nullptr) {
         std::cout << "Renderer could not be created! SDL_Error: " << SDL_GetError() << std::endl;
         SDL_DestroyWindow(window);
+        Mix_Quit();
         IMG_Quit();
         SDL_Quit();
         return -1;
@@ -149,6 +197,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Unable to load image! SDL_image Error: " << IMG_GetError() << std::endl;
         SDL_DestroyRenderer(renderer);
         SDL_DestroyWindow(window);
+        Mix_Quit();
         IMG_Quit();
         SDL_Quit();
         return -1;
@@ -161,6 +210,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Unable to create texture! SDL Error: " << SDL_GetError() << std::endl;
         SDL_DestroyRenderer(renderer);
         SDL_DestroyWindow(window);
+        Mix_Quit();
         IMG_Quit();
         SDL_Quit();
         return -1;
@@ -170,11 +220,19 @@ int main(int argc, char* argv[]) {
 
     Entity player = ecs.createEntity();
     ecs.addComponent(player, Transform{400.0f, 100.0f, 0.0f, 1.0f, 1.0f});
-    ecs.addComponent(player, Sprite{spriteTexture, 64, 64});
+    ecs.addComponent(player, Sprite{spriteTexture, 64, 64, 0, 0, 0, 0});
     ecs.addComponent(player, Velocity{0.0f, 0.0f});
     ecs.addComponent(player, Collider{64.0f, 64.0f, 0.0f, 0.0f, false});
     ecs.addComponent(player, RigidBody{1.0f, true, 1.0f, false});
     ecs.addComponent(player, PlayerController{300.0f, 500.0f, false});
+    ecs.addComponent(player, Health{100, 100});
+
+    Entity playerParticles = ecs.createEntity();
+    ecs.addComponent(playerParticles, Transform{400.0f, 100.0f, 0.0f, 1.0f, 1.0f});
+    ecs.addComponent(playerParticles, ParticleEmitter{
+        20.0f, 0.5f, 0.0f, 50, true,
+        -50.0f, 50.0f, -100.0f, -50.0f
+    });
 
     Entity ground = ecs.createEntity();
     ecs.addComponent(ground, Transform{0.0f, WORLD_HEIGHT - 100.0f, 0.0f, 1.0f, 1.0f});
@@ -204,7 +262,7 @@ int main(int argc, char* argv[]) {
         float randomScale = 0.5f + (float)(rand() % 100) / 100.0f;
         
         ecs.addComponent(ball, Transform{randomX, randomY, 0.0f, randomScale, randomScale});
-        ecs.addComponent(ball, Sprite{spriteTexture, 64, 64});
+        ecs.addComponent(ball, Sprite{spriteTexture, 64, 64, 0, 0, 0, 0});
         ecs.addComponent(ball, Velocity{0.0f, 0.0f});
         ecs.addComponent(ball, Collider{64.0f * randomScale, 64.0f * randomScale, 0.0f, 0.0f, false});
         ecs.addComponent(ball, RigidBody{1.0f, true, 1.0f, false});
@@ -222,7 +280,7 @@ int main(int argc, char* argv[]) {
 
     Uint32 lastTime = SDL_GetTicks();
 
-    bool showColliders = true;
+    bool showColliders = false;
 
     while (isRunning) {
         frameStart = SDL_GetTicks();
@@ -253,8 +311,15 @@ int main(int argc, char* argv[]) {
         gravitySystem(ecs, deltaTime);
         movementSystem(ecs, deltaTime);
         physicsSystem(ecs, deltaTime);
+        animationSystem(ecs, deltaTime);
+        particleSystem(ecs, deltaTime);
+        lifetimeSystem(ecs, deltaTime);
 
         auto& playerTransform = ecs.getComponent<Transform>(player);
+        auto& particleEmitterTransform = ecs.getComponent<Transform>(playerParticles);
+        particleEmitterTransform.x = playerTransform.x + 32;
+        particleEmitterTransform.y = playerTransform.y + 64;
+
         updateCamera(camera, playerTransform.x + 32, playerTransform.y + 32);
 
         SDL_SetRenderDrawColor(renderer, 30, 30, 46, 255);
@@ -285,6 +350,7 @@ int main(int argc, char* argv[]) {
             }
         }
 
+        renderParticles(ecs, renderer, camera);
         renderSystem(ecs, renderer, camera);
 
         if (showColliders) {
@@ -302,6 +368,7 @@ int main(int argc, char* argv[]) {
     SDL_DestroyTexture(spriteTexture);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
+    Mix_Quit();
     IMG_Quit();
     SDL_Quit();
 
