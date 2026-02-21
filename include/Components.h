@@ -18,3 +18,24 @@ struct Velocity {
     float vx;
     float vy;
 };
+
+struct Collider {
+    float width;
+    float height;
+    float offsetX;
+    float offsetY;
+    bool isTrigger;
+};
+
+struct RigidBody {
+    float mass;
+    bool useGravity;
+    float gravityScale;
+    bool isStatic;
+};
+
+struct PlayerController {
+    float speed;
+    float jumpForce;
+    bool isGrounded;
+};
